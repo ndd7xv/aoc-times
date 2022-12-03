@@ -1,0 +1,137 @@
+#!/bin/bash
+
+print_usage() {
+    echo "Returns a table of users who completed a specific part of the Advent of Code along with their completion time.
+
+Anonymous users are named with their number (e.g. anonymous user #123456 will show up as 123456).
+
+print_usage: 
+    aoc-times [OPTIONS]
+
+OPTIONS:
+    -d, --day <DAY_NUMBER>              The day (1-25, default 1)
+
+    -p, --part <PART_NUMBER>            The part (1 or 2, default 1)
+
+    -y, --year <YEAR>                   The year (default 2015)
+
+    -l, --leaderboard <LEADERBOARD>     The private leaderboard ID (the number followed by $(/view/)
+                                            in the URL)
+
+    -c, --cookie <COOKIE>               The cookie used to request your profile's leaderboards
+
+    -f, --from-file <FILE>              Pass in variables from <FILE>
+                                            Values will be set depending on which option is called
+                                            last. Values include DAY_NUMBER, PART_NUMBER, YEAR,
+                                            LEADERBOARD, and COOKIE, though this option essentially
+                                            runs source on the file.
+                                        
+                                            Example of a file could look like:
+                                            YEAR=2022
+                                            LEADERBOARD=<LEADERBOARD>
+                                            COOKIE=<COOKIE>
+
+                                            So that you only have to specify the day and number on
+                                            every call.
+"
+    exit
+}
+
+parse_input() {
+    if [ -z "$1" ]; then
+        echo "No file to parse input from is specified!"
+        exit
+    elif [ ! -f "$1" ]; then
+        echo "Can't find the file '$1' to parse!"
+        exit
+    fi
+    source "$1"
+}
+
+if [ -z "$1" ]; then
+    print_usage
+fi
+
+# Defaults and Parsing Values
+YEAR=2015
+PART_NUMBER=1
+DAY_NUMBER=1
+
+while [ "$1" != "" ]; do
+    case $1 in
+    -d | --day)
+        shift
+        DAY_NUMBER="$1"
+        ;;
+    -p | --part)
+        shift
+        PART_NUMBER="$1"
+        ;;
+    -y | --year)
+        shift
+        YEAR="$1"
+        ;;
+    -l | --leaderboard)
+        shift
+        LEADERBOARD="$1"
+        ;;
+    -c | --cookie)
+        shift
+        COOKIE="$1"
+        ;;
+    -f | --from-file)
+        shift
+        parse_input "$1"
+        ;;
+    -h | --help)
+        print_usage
+        ;;
+    *)
+        print_usage
+        ;;
+    esac
+    shift
+done
+
+# Input Check
+if [ -z "$COOKIE" ]; then
+    echo "You need to specify a cookie!"
+elif [ -z "$LEADERBOARD" ]; then
+    echo "You need to specify a private leaderboard!"
+elif [ -z "$DAY_NUMBER" ] || [ -z "$DAY_NUMBER" ]; then
+    echo "You need to specify a day and part!"
+elif [ -z "$YEAR" ]; then
+    echo "You need to specify a year!"
+elif [ "$DAY_NUMBER" -lt 1 ] || [ "$DAY_NUMBER" -gt 25 ]; then
+    echo "Day Number should be between 1-25!"
+    exit
+elif [ "$PART_NUMBER" != "1" ] && [ "$PART_NUMBER" != "2" ]; then
+    echo "Part Number must be 1 or 2!"
+    exit
+fi
+
+JSON=$(curl -s --fail-with-body \
+    -H "Cookie: session=$COOKIE" \
+    -H "User-Agent: Private Leaderboard Completion Table by ndd7xv" \
+    https://adventofcode.com/"$YEAR"/leaderboard/private/view/"$LEADERBOARD".json)
+
+if ! jq -e . >/dev/null 2>&1 <<<"$JSON"; then
+    echo "Curl failed with output:
+$JSON"
+    exit
+fi
+
+# Create Table
+echo "Completion Table for Day $DAY_NUMBER Part $PART_NUMBER ($YEAR)"
+
+TIMES=$(
+    echo "$JSON" |
+        jq --arg space " " --arg time_format "%c" --arg day "$DAY_NUMBER" --arg part "$PART_NUMBER" -r '
+    .members | 
+    to_entries[] | 
+        "\(.value.name // .key | split($space) | .[0]) \(.value.completion_day_level | to_entries[] | select(.key==$day) | .value | to_entries[] | select(.key==$part) | .value.get_star_ts | strflocaltime($time_format))"'
+)
+
+TABLE=$(echo "$TIMES" | sort -k6n -k3M -k4n -k5 | nl | column -t -N \#,Name,Date)
+
+echo "$TABLE"
