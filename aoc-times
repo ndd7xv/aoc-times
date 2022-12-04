@@ -112,7 +112,7 @@ fi
 
 JSON=$(curl -s --fail-with-body \
     -H "Cookie: session=$COOKIE" \
-    -H "User-Agent: Private Leaderboard Completion Table by ndd7xv" \
+    -A "https://github.com/ndd7xv/aoc-times by ndd7xv@virginia.edu" \
     https://adventofcode.com/"$YEAR"/leaderboard/private/view/"$LEADERBOARD".json)
 
 if ! jq -e . >/dev/null 2>&1 <<<"$JSON"; then
