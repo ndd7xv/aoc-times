@@ -1,7 +1,7 @@
 #!/bin/bash
 
 print_usage() {
-    echo "Returns a table of users who completed a specific part of the Advent of Code along with their completion time.
+    echo "Print a table of users and their completion time for a specific part of the Advent of Code.
 
 Anonymous users are named with their number (e.g. anonymous user #123456 will show up as 123456).
 
@@ -15,7 +15,7 @@ OPTIONS:
 
     -y, --year <YEAR>                   The year (default 2015)
 
-    -l, --leaderboard <LEADERBOARD>     The private leaderboard ID (the number followed by $(/view/)
+    -l, --leaderboard <LEADERBOARD>     The private leaderboard ID (the number followed by /view/)
                                             in the URL)
 
     -c, --cookie <COOKIE>               The cookie used to request your profile's leaderboards
@@ -33,11 +33,24 @@ OPTIONS:
 
                                             So that you only have to specify the day and number on
                                             every call.
+    
+    --update                            Force a cURL request for updated information
+
+    --cached                            Force table to be created from the cache
+
+Avoid spamming the --update option. See https://www.reddit.com/r/adventofcode/wiki/faqs/automation/
+for more information.
+
+If you want to be ultra considerate of the request you make (or you're offline), consider using the
+--cached option.
 "
     exit
 }
 
-parse_input() {
+# Sets variables according to the specified file.
+# In the future, we may want to only set variables that are necessary to the script as opposed to
+# sourcing the entire thing
+parse_file_input() {
     if [ -z "$1" ]; then
         echo "No file to parse input from is specified!"
         exit
@@ -46,6 +59,53 @@ parse_input() {
         exit
     fi
     source "$1"
+}
+
+# Check if the information is cached - in the future, we may want to configure custom locations
+# Stores JSON data in ./.aoc/<LEADERBOARD>/<YEAR>/<YEAR>-<LEADERBOARD>.json and last updated
+# information in an ./.aoc/<LEADERBOARD>/<YEAR>/<YEAR>-<LEADERBOARD>-updated.log
+get_json() {
+    CACHED_DATA_DIR="$( dirname -- "$0"; )/.aoc/$LEADERBOARD/$YEAR"
+    CACHED_DATA_NAME="$YEAR-$LEADERBOARD.json"
+    LAST_UPDATED_LOG="$YEAR-$LEADERBOARD-updated.log"
+
+    if [ -f "$CACHED_DATA_DIR/$LAST_UPDATED_LOG" ]; then
+        UPDATE_ELAPSED_TIME="$(($(date +%s) - $(cat "$CACHED_DATA_DIR/$LAST_UPDATED_LOG")))"
+    fi
+
+    # If the update flag has been set, last updated wasn't calculated, or last updated > 15 minutes
+    if [ -z "$FORCE_CACHE" ] && { [ -n "$FORCE_UPDATE" ] || [ -z "$UPDATE_ELAPSED_TIME" ] || [ "$UPDATE_ELAPSED_TIME" -gt 900 ]; }; then
+        echo "Making cURL Request; using this data for the next 15 minutes unless --update is used" >&2
+
+        JSON=$(curl -s --fail-with-body \
+            -H "Cookie: session=$COOKIE" \
+            -A "https://github.com/ndd7xv/aoc-times by ndd7xv@virginia.edu" \
+            https://adventofcode.com/"$YEAR"/leaderboard/private/view/"$LEADERBOARD".json)
+
+        if ! jq -e . >/dev/null 2>&1 <<<"$JSON"; then
+            echo "Curl failed with output:
+        $JSON" >&2
+            exit
+        fi
+
+        # Cache data and update the last updated log
+        mkdir -p "$CACHED_DATA_DIR"
+        echo "$JSON" > "$CACHED_DATA_DIR/$CACHED_DATA_NAME"
+        date +%s > "$CACHED_DATA_DIR/$LAST_UPDATED_LOG"
+    elif [ -n "$FORCE_CACHE" ] || [ -f "$CACHED_DATA_DIR/$CACHED_DATA_NAME" ]; then
+        if [ ! -f "$CACHED_DATA_DIR/$CACHED_DATA_NAME" ]; then
+            echo "Cache was forced, but the data can't be found locally!" >&2
+            exit
+        fi
+        echo "Data updated $UPDATE_ELAPSED_TIME seconds ago, using cache" >&2
+
+        JSON=$(cat "$CACHED_DATA_DIR/$CACHED_DATA_NAME")
+    else
+        echo "Unable to find location of cached data, but the update log exists" >&2
+        exit
+    fi
+
+    echo "$JSON"
 }
 
 if [ -z "$1" ]; then
@@ -81,12 +141,15 @@ while [ "$1" != "" ]; do
         ;;
     -f | --from-file)
         shift
-        parse_input "$1"
+        parse_file_input "$1"
         ;;
-    -h | --help)
-        print_usage
+    --update)
+        FORCE_UPDATE=1
         ;;
-    *)
+    --cached)
+        FORCE_CACHE=1
+        ;;
+    -h | --help | *)
         print_usage
         ;;
     esac
@@ -108,16 +171,14 @@ elif [ "$DAY_NUMBER" -lt 1 ] || [ "$DAY_NUMBER" -gt 25 ]; then
 elif [ "$PART_NUMBER" != "1" ] && [ "$PART_NUMBER" != "2" ]; then
     echo "Part Number must be 1 or 2!"
     exit
+elif [ -n "$FORCE_CACHE" ] && [ -n "$FORCE_UPDATE" ]; then
+    echo "--cached and --update are mutually exclusive!"
+    exit
 fi
 
-JSON=$(curl -s --fail-with-body \
-    -H "Cookie: session=$COOKIE" \
-    -A "https://github.com/ndd7xv/aoc-times by ndd7xv@virginia.edu" \
-    https://adventofcode.com/"$YEAR"/leaderboard/private/view/"$LEADERBOARD".json)
+JSON=$(get_json)
 
-if ! jq -e . >/dev/null 2>&1 <<<"$JSON"; then
-    echo "Curl failed with output:
-$JSON"
+if [ -z "$JSON" ]; then
     exit
 fi
 
@@ -127,8 +188,8 @@ echo "Completion Table for Day $DAY_NUMBER Part $PART_NUMBER ($YEAR)"
 TIMES=$(
     echo "$JSON" |
         jq --arg space " " --arg time_format "%c" --arg day "$DAY_NUMBER" --arg part "$PART_NUMBER" -r '
-    .members | 
-    to_entries[] | 
+        .members | 
+        to_entries[] | 
         "\(.value.name // .key | split($space) | .[0]) \(.value.completion_day_level | to_entries[] | select(.key==$day) | .value | to_entries[] | select(.key==$part) | .value.get_star_ts | strflocaltime($time_format))"'
 )
 

@@ -1,7 +1,5 @@
 # aoc-times
 
-**Please refrain from spamming this.** There are plans to cache information. For more information, see [the automation FAQ.](https://www.reddit.com/r/adventofcode/wiki/faqs/automation/)
-
 A script for checking times on a private leaderboard.
 
 ## Using
@@ -31,3 +29,9 @@ Completion Table for Day 1 Part 1 (2022)
 ```
 
 For more information on how to use, run `./aoc-times --help`.
+
+## How it works
+
+This script essentially makes a `curl` request and runs a bunch of `jq` commands to grab the information that's needed.
+
+Caching is done by storing information and last updated time in a `.aoc` directory in the same directory as the script. For more information about the need for caching, see [the automation FAQ.](https://www.reddit.com/r/adventofcode/wiki/faqs/automation/)
