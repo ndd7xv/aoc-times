@@ -32,7 +32,9 @@ OPTIONS:
                                             COOKIE=<COOKIE>
 
                                             So that you only have to specify the day and number on
-                                            every call.
+                                            every call. By default, aoc-times will read a file
+                                            called 'config' in its .aoc folder (where it stores
+                                            cached data) if that file exists.
     
     --update                            Force a cURL request for updated information
 
@@ -116,6 +118,11 @@ fi
 YEAR=2015
 PART_NUMBER=1
 DAY_NUMBER=1
+
+# Check to parse a config file - TODO add commands to read/write attributes from this config file
+if [ -f "$( dirname -- "$0"; )/.aoc/config" ]; then
+    parse_file_input "$( dirname -- "$0"; )/.aoc/config"
+fi
 
 while [ "$1" != "" ]; do
     case $1 in
